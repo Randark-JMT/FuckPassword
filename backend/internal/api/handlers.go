@@ -25,20 +25,26 @@ type API struct {
 
 func (a *API) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	if a.Ingest.IsBusy() {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "an upload is already in progress"})
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "an Upload is already in progress"})
 		return
 	}
-	n, skipped, err := a.Ingest.Upload(r.Context(), r.Body)
-	if err != nil {
+	if err := a.Ingest.StartUpload(r.Body, r.ContentLength); err != nil {
 		if errors.Is(err, ingest.ErrBusy) {
-			writeJSON(w, http.StatusConflict, map[string]any{"error": "an upload is already in progress"})
+			writeJSON(w, http.StatusConflict, map[string]any{"error": "an Upload is already in progress"})
 			return
 		}
-		log.Printf("upload failed: %v", err)
+		log.Printf("upload phase A failed: %v", err)
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"inserted": n, "skipped": skipped})
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"phase":       ingest.PhaseProcessing,
+		"bytes_total": r.ContentLength,
+	})
+}
+
+func (a *API) HandleUploadStatus(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, a.Ingest.Snapshot())
 }
 
 type submitRequest struct {

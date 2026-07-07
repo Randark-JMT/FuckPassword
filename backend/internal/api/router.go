@@ -15,6 +15,7 @@ func NewRouter(a *API) http.Handler {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})
 	mux.HandleFunc("POST /api/upload", a.HandleUpload)
+	mux.HandleFunc("GET /api/upload/status", a.HandleUploadStatus)
 	mux.HandleFunc("POST /api/jobs", a.HandleSubmit)
 	mux.HandleFunc("GET /api/jobs", a.HandleBoard)
 	mux.HandleFunc("GET /api/jobs/{id}", a.HandleJob)

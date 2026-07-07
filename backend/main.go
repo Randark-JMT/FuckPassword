@@ -33,6 +33,7 @@ func main() {
 
 	ing := ingest.New(database, cfg.UploadDir, cfg.IngestBatch, cfg.MaxLineBytes)
 	ing.SweepOrphans()
+	ing.Start(ctx)
 
 	worker := queue.New(database, cfg.StatementTimeout)
 	go worker.Run(ctx)

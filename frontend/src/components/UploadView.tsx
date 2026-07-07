@@ -1,64 +1,102 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { getUploadStatus, type UploadStatus } from "../api";
 
-function uploadWithProgress(
-  file: File,
-  onProgress: (frac: number) => void
-): Promise<{ inserted: number; skipped: number }> {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/upload");
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(e.loaded / e.total);
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          resolve(JSON.parse(xhr.responseText));
-        } catch {
-          reject(new Error("invalid response"));
-        }
-      } else {
-        try {
-          reject(new Error(JSON.parse(xhr.responseText).error || xhr.statusText));
-        } catch {
-          reject(new Error(xhr.statusText || `HTTP ${xhr.status}`));
-        }
-      }
-    };
-    xhr.onerror = () => reject(new Error("network error"));
-    xhr.send(file);
-  });
-}
+type UiPhase = "idle" | "uploading" | "processing" | "done" | "error";
+
+const POLL_INTERVAL_MS = 500;
+const MAX_CONSECUTIVE_ERRORS = 5;
 
 export default function UploadView() {
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [uiPhase, setUiPhase] = useState<UiPhase>("idle");
+  const [byteFrac, setByteFrac] = useState(0);
+  const [status, setStatus] = useState<UploadStatus | null>(null);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pollRef = useRef<number | null>(null);
 
-  async function handleUpload() {
-    if (!file) return;
-    setBusy(true);
-    setProgress(0);
-    setResult(null);
-    setError(null);
-    try {
-      const res = await uploadWithProgress(file, setProgress);
-      setResult(
-        `Inserted ${res.inserted.toLocaleString()} new unique record(s)` +
-          (res.skipped > 0
-            ? `; dropped ${res.skipped.toLocaleString()} overlong line(s).`
-            : ".")
-      );
+  function stopPolling() {
+    if (pollRef.current !== null) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }
+
+  useEffect(() => () => stopPolling(), []);
+
+  function finish(done: boolean, msg: string) {
+    stopPolling();
+    if (done) {
+      setResult(msg);
+      setUiPhase("done");
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
+    } else {
+      setError(msg);
+      setUiPhase("error");
     }
+    setBusy(false);
+  }
+
+  function startPolling() {
+    let consecutiveErrors = 0;
+    stopPolling();
+    pollRef.current = window.setInterval(async () => {
+      try {
+        const s = await getUploadStatus();
+        consecutiveErrors = 0;
+        setStatus(s);
+        if (s.phase === "done") {
+          finish(
+            true,
+            `Inserted ${s.inserted.toLocaleString()} new unique record(s)` +
+              (s.skipped > 0 ? `; dropped ${s.skipped.toLocaleString()} overlong line(s).` : ".")
+          );
+        } else if (s.phase === "error") {
+          finish(false, s.error || "processing failed");
+        }
+      } catch {
+        consecutiveErrors++;
+        if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+          finish(false, "lost contact with server during processing");
+        }
+      }
+    }, POLL_INTERVAL_MS);
+  }
+
+  function handleUpload() {
+    if (!file) return;
+    setBusy(true);
+    setUiPhase("uploading");
+    setByteFrac(0);
+    setStatus(null);
+    setResult(null);
+    setError(null);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/upload");
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) setByteFrac(e.loaded / e.total);
+    };
+    xhr.onload = () => {
+      if (xhr.status === 202) {
+        setUiPhase("processing");
+        startPolling();
+        return;
+      }
+      let msg = xhr.statusText || `HTTP ${xhr.status}`;
+      try {
+        const body = JSON.parse(xhr.responseText);
+        if (body?.error) msg = body.error;
+      } catch {
+        /* keep statusText */
+      }
+      finish(false, msg);
+    };
+    xhr.onerror = () => finish(false, "network error");
+    xhr.send(file);
   }
 
   return (
@@ -81,12 +119,12 @@ export default function UploadView() {
         </button>
       </div>
 
-      {busy && (
+      {uiPhase === "uploading" && (
         <div style={{ marginTop: 12 }}>
           <div style={{ background: "var(--panel-2)", borderRadius: 6, overflow: "hidden" }}>
             <div
               style={{
-                width: `${progress * 100}%`,
+                width: `${byteFrac * 100}%`,
                 height: 8,
                 background: "var(--accent)",
                 transition: "width 0.2s",
@@ -94,8 +132,23 @@ export default function UploadView() {
             />
           </div>
           <div className="muted" style={{ marginTop: 4 }}>
-            {(progress * 100).toFixed(1)}%
+            {(byteFrac * 100).toFixed(1)}%
+            {byteFrac >= 0.999 ? " — saving Source File…" : ""}
           </div>
+        </div>
+      )}
+
+      {uiPhase === "processing" && (
+        <div className="muted" style={{ marginTop: 12 }}>
+          <span className="spinner" style={{ marginRight: 8 }} />
+          Processing records…
+          {status && (
+            <div style={{ marginTop: 4 }}>
+              Inserted {status.inserted.toLocaleString()} · Dropped {status.skipped.toLocaleString()}
+              {" · Processed "}
+              {status.lines_processed.toLocaleString()} line(s)
+            </div>
+          )}
         </div>
       )}
 

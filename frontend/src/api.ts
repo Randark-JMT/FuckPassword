@@ -25,20 +25,21 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function uploadFile(file: File): Promise<{ inserted: number }> {
-  const res = await fetch("/api/upload", { method: "POST", body: file });
-  return jsonOrThrow(res);
+export interface UploadStatus {
+  phase: "idle" | "uploading" | "processing" | "done" | "error";
+  bytes_total: number;
+  lines_processed: number;
+  inserted: number;
+  skipped: number;
+  started_at?: string | null;
+  finished_at?: string | null;
+  error?: string;
 }
 
-export async function uploadBusy(): Promise<boolean> {
-  // The server returns 409 when an upload is in progress; treat that as "busy".
-  try {
-    const res = await fetch("/api/upload", { method: "POST", body: new Blob([""]) });
-    if (res.status === 409) return true;
-  } catch {
-    /* network error → assume not busy */
-  }
-  return false;
+export async function getUploadStatus(): Promise<UploadStatus> {
+  const res = await fetch("/api/upload/status");
+  if (!res.ok) throw new Error(`status ${res.status}`);
+  return res.json();
 }
 
 export async function submitJob(pattern: string, isRegex: boolean): Promise<{ task_id: string; status: string }> {

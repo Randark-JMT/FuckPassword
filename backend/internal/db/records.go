@@ -58,8 +58,10 @@ func (s *lineSource) Err() error              { return nil }
 
 // IngestFile streams the file at path into the Dataset in batches, dropping lines
 // longer than maxLineBytes and deduplicating against existing records via the
-// text_hash unique index. Returns newly-inserted unique records and dropped-line count.
-func (d *DB) IngestFile(ctx context.Context, path string, batchSize, maxLineBytes int) (inserted int64, skipped int64, err error) {
+// text_hash unique index. Returns newly-inserted unique records and dropped-line
+// count. After each batch is inserted, onBatch (if non-nil) is invoked with the
+// running totals: processed (non-overlong lines read so far), inserted, skipped.
+func (d *DB) IngestFile(ctx context.Context, path string, batchSize, maxLineBytes int, onBatch func(processed, inserted, skipped int64)) (inserted int64, skipped int64, err error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return 0, 0, err
@@ -77,10 +79,12 @@ func (d *DB) IngestFile(ctx context.Context, path string, batchSize, maxLineByte
 		return 0, 0, err
 	}
 
+	var processed int64
 	for {
 		src := &lineSource{r: br, max: batchSize, maxBytes: maxLineBytes}
 		copied, err := tx.CopyFrom(ctx, pgx.Identifier{"ingest_batch"}, []string{"text"}, src)
 		skipped += src.skipped
+		processed += copied
 		if err != nil {
 			return inserted, skipped, err
 		}
@@ -94,6 +98,9 @@ func (d *DB) IngestFile(ctx context.Context, path string, batchSize, maxLineByte
 		inserted += tag.RowsAffected()
 		if _, err := tx.Exec(ctx, `TRUNCATE ingest_batch`); err != nil {
 			return inserted, skipped, err
+		}
+		if onBatch != nil {
+			onBatch(processed, inserted, skipped)
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
