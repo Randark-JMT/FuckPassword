@@ -3,7 +3,7 @@ import { useRef, useState } from "react";
 function uploadWithProgress(
   file: File,
   onProgress: (frac: number) => void
-): Promise<{ inserted: number }> {
+): Promise<{ inserted: number; skipped: number }> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/upload");
@@ -46,7 +46,12 @@ export default function UploadView() {
     setError(null);
     try {
       const res = await uploadWithProgress(file, setProgress);
-      setResult(`Inserted ${res.inserted.toLocaleString()} new unique record(s).`);
+      setResult(
+        `Inserted ${res.inserted.toLocaleString()} new unique record(s)` +
+          (res.skipped > 0
+            ? `; dropped ${res.skipped.toLocaleString()} overlong line(s).`
+            : ".")
+      );
       setFile(null);
       if (inputRef.current) inputRef.current.value = "";
     } catch (e) {

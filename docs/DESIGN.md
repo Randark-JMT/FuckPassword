@@ -45,12 +45,15 @@ table the worker writes.
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- The Dataset: one row per unique Record (append-only, deduplicated).
+-- Dedup is via a fixed-size SHA-256 hash so the unique index never overflows
+-- on long lines (see ADR 0004). Long lines are dropped before insert.
 CREATE TABLE records (
-    id   bigserial PRIMARY KEY,
-    text text NOT NULL
+    id        bigserial PRIMARY KEY,
+    text      text NOT NULL,
+    text_hash text GENERATED ALWAYS AS (encode(digest(text, 'sha256'), 'hex')) STORED
 );
-CREATE UNIQUE INDEX records_text_uq ON records (text);
-CREATE INDEX records_text_trgm     ON records USING gin (text gin_trgm_ops);
+CREATE UNIQUE INDEX records_text_hash_uq ON records (text_hash);
+CREATE INDEX records_text_trgm           ON records USING gin (text gin_trgm_ops);
 
 -- The Queue + job metadata.
 CREATE TYPE job_status AS ENUM
@@ -105,10 +108,15 @@ body line-by-line. **No resumability** (Option B) — client retries the whole f
 
 **Ingest (DB-side chunking):**
 1. Stream the body to a `.part` file on the staging volume.
-2. An ingest worker reads the `.part` in batches of ~50k lines, `COPY`s each batch into a
-   temporary table, then `INSERT INTO records ... ON CONFLICT (text) DO NOTHING` (global
-   dedup). Each batch is idempotent, so re-uploading the same file is safe.
+2. An ingest worker reads the `.part` in batches of ~50k lines, **drops any line longer
+   than `MAX_LINE_BYTES`** (default 4096; counted in a skipped tally — see ADR 0004), `COPY`s
+   each batch into a temporary table, then `INSERT INTO records ... ON CONFLICT (text_hash)
+   DO NOTHING` (global dedup via the SHA-256 hash). Each batch is idempotent, so re-uploading
+   the same file is safe.
 3. Delete the `.part` file (staging housekeeping — the Dataset itself is append-only).
+
+The upload response reports both `inserted` (new unique records) and `skipped` (overlong
+lines dropped).
 
 **Lock:** the upload function is **locked** while an Upload is in progress; a new upload is
 rejected (`409`) until the current one finishes. Queries are **not** blocked during upload
@@ -171,5 +179,6 @@ access boundary. Removing it requires reintroducing app-level auth.
 - [0001 — Per-Query-Job result tables (FK, not copied text)](docs/adr/0001-per-task-result-tables.md)
 - [0002 — Regex safety via statement_timeout (RE2 deferred)](docs/adr/0002-regex-safety-via-statement-timeout.md)
 - [0003 — No authentication, no user identity](docs/adr/0003-no-authentication.md)
+- [0004 — Indexing strategy for pathological line lengths](docs/adr/0004-indexing-long-lines.md)
 
 Shared vocabulary: [CONTEXT.md](../CONTEXT.md).

@@ -5,7 +5,7 @@ A system that ingests large plain-text datasets — one record per line — and 
 ## Language
 
 **Record**:
-A single line of ingested text, treated as opaque content. Identity is the exact text — two identical lines are one Record. The unit of matching.
+A single line of ingested text, treated as opaque content. Identity is the exact text — two identical lines are one Record. The unit of matching. Lines longer than the configured byte cap (default 4 KB) are dropped at ingest, never becoming Records.
 _Avoid_: line, entry, item, row
 
 **Source File**:

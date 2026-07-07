@@ -7,13 +7,14 @@ import (
 )
 
 type Config struct {
-	ListenAddr      string
-	DSN             string
-	UploadDir       string
+	ListenAddr       string
+	DSN              string
+	UploadDir        string
 	StatementTimeout time.Duration
-	MaxQueue        int
-	TTLDays         int
-	IngestBatch     int
+	MaxQueue         int
+	TTLDays          int
+	IngestBatch      int
+	MaxLineBytes     int
 }
 
 func Load() Config {
@@ -25,6 +26,7 @@ func Load() Config {
 		MaxQueue:         intEnv("MAX_QUEUE", 20),
 		TTLDays:          intEnv("TTL_DAYS", 7),
 		IngestBatch:      intEnv("INGEST_BATCH", 50000),
+		MaxLineBytes:     intEnv("MAX_LINE_BYTES", 4096),
 	}
 }
 

@@ -1,12 +1,25 @@
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TABLE IF NOT EXISTS records (
     id   bigserial PRIMARY KEY,
     text text NOT NULL
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS records_text_uq ON records (text);
-CREATE INDEX IF NOT EXISTS records_text_trgm     ON records USING gin (text gin_trgm_ops);
+-- Dedup key: fixed-size SHA-256 of the text. The unique index always fits,
+-- regardless of line length (a raw-text unique index breaks on long lines).
+ALTER TABLE records ADD COLUMN IF NOT EXISTS text_hash text
+    GENERATED ALWAYS AS (encode(digest(text, 'sha256'), 'hex')) STORED;
+
+-- Drop the legacy raw-text unique index if a previous schema version created it.
+DROP INDEX IF EXISTS records_text_uq;
+
+CREATE UNIQUE INDEX IF NOT EXISTS records_text_hash_uq ON records (text_hash);
+
+-- Search index. Safe because the ingest layer drops lines longer than
+-- MAX_LINE_BYTES before they reach this table, so no indexed value is large
+-- enough to overflow a GIN page entry.
+CREATE INDEX IF NOT EXISTS records_text_trgm ON records USING gin (text gin_trgm_ops);
 
 DO $$ BEGIN
     CREATE TYPE job_status AS ENUM ('queued','running','completed','failed','cancelled');
@@ -29,8 +42,6 @@ CREATE TABLE IF NOT EXISTS query_jobs (
 CREATE INDEX IF NOT EXISTS query_jobs_status_pos_idx
     ON query_jobs (status, position);
 
--- A row that flips from 'queued'/'running' to terminal states via this trigger
--- always stamps finished_at, so TTL reaping can find expired terminal jobs.
 CREATE OR REPLACE FUNCTION stamp_finished() RETURNS trigger AS $$
 BEGIN
     IF NEW.status IN ('completed','failed','cancelled') AND OLD.status NOT IN ('completed','failed','cancelled') THEN

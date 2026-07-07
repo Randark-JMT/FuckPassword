@@ -31,7 +31,7 @@ func main() {
 	database.ResetStuckJobs(ctx)
 	database.StartReaper(ctx, cfg.TTLDays)
 
-	ing := ingest.New(database, cfg.UploadDir, cfg.IngestBatch)
+	ing := ingest.New(database, cfg.UploadDir, cfg.IngestBatch, cfg.MaxLineBytes)
 	ing.SweepOrphans()
 
 	worker := queue.New(database, cfg.StatementTimeout)

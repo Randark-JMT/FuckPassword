@@ -32,7 +32,8 @@ ENV LISTEN_ADDR=:8080 \
     DSN="postgres://postgres:postgres@db:5432/fuckpassword?sslmode=disable" \
     STATEMENT_TIMEOUT=60s \
     MAX_QUEUE=20 \
-    TTL_DAYS=7
+    TTL_DAYS=7 \
+    MAX_LINE_BYTES=4096
 COPY --from=backend /out/server /server
 USER app
 EXPOSE 8080

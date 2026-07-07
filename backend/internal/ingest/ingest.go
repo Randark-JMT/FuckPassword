@@ -17,19 +17,21 @@ var ErrBusy = errors.New("upload in progress")
 // Service handles serialized uploads: streams a request body to a staging file,
 // then deduplicates it into the Dataset. One upload at a time, app-instance-wide.
 type Service struct {
-	db       *db.DB
-	partPath string
-	batch    int
-	mu       sync.Mutex
-	busy     bool
+	db           *db.DB
+	partPath     string
+	batch        int
+	maxLineBytes int
+	mu           sync.Mutex
+	busy         bool
 }
 
-func New(database *db.DB, uploadDir string, batch int) *Service {
+func New(database *db.DB, uploadDir string, batch, maxLineBytes int) *Service {
 	_ = os.MkdirAll(uploadDir, 0o755)
 	return &Service{
-		db:       database,
-		partPath: filepath.Join(uploadDir, "upload.part"),
-		batch:    batch,
+		db:           database,
+		partPath:     filepath.Join(uploadDir, "upload.part"),
+		batch:        batch,
+		maxLineBytes: maxLineBytes,
 	}
 }
 
@@ -45,12 +47,13 @@ func (s *Service) SweepOrphans() {
 }
 
 // Upload streams body into the Dataset, returning the count of newly inserted
-// unique records. It rejects with ErrBusy if an upload is already running.
-func (s *Service) Upload(ctx context.Context, body io.Reader) (int64, error) {
+// unique records and the count of lines dropped for exceeding the byte cap.
+// It rejects with ErrBusy if an upload is already running.
+func (s *Service) Upload(ctx context.Context, body io.Reader) (int64, int64, error) {
 	s.mu.Lock()
 	if s.busy {
 		s.mu.Unlock()
-		return 0, ErrBusy
+		return 0, 0, ErrBusy
 	}
 	s.busy = true
 	s.mu.Unlock()
@@ -63,19 +66,19 @@ func (s *Service) Upload(ctx context.Context, body io.Reader) (int64, error) {
 
 	f, err := os.Create(s.partPath)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	if _, err := io.Copy(f, body); err != nil {
 		f.Close()
 		_ = os.Remove(s.partPath)
-		return 0, err
+		return 0, 0, err
 	}
 	if err := f.Close(); err != nil {
 		_ = os.Remove(s.partPath)
-		return 0, err
+		return 0, 0, err
 	}
 
-	n, err := s.db.IngestFile(ctx, s.partPath, s.batch)
+	inserted, skipped, err := s.db.IngestFile(ctx, s.partPath, s.batch, s.maxLineBytes)
 	_ = os.Remove(s.partPath)
-	return n, err
+	return inserted, skipped, err
 }

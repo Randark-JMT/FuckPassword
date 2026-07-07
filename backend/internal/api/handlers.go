@@ -28,7 +28,7 @@ func (a *API) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "an upload is already in progress"})
 		return
 	}
-	n, err := a.Ingest.Upload(r.Context(), r.Body)
+	n, skipped, err := a.Ingest.Upload(r.Context(), r.Body)
 	if err != nil {
 		if errors.Is(err, ingest.ErrBusy) {
 			writeJSON(w, http.StatusConflict, map[string]any{"error": "an upload is already in progress"})
@@ -38,7 +38,7 @@ func (a *API) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusAccepted, map[string]any{"inserted": n})
+	writeJSON(w, http.StatusAccepted, map[string]any{"inserted": n, "skipped": skipped})
 }
 
 type submitRequest struct {
