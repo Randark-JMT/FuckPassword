@@ -1,0 +1,11 @@
+# Development override: build the app image from local source instead of pulling GHCR.
+# Applied automatically by `docker compose up` when this file sits next to docker-compose.yml.
+# For a production/client deploy that must pull the published image, run:
+#   docker compose -f docker-compose.yml up -d
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: fuckpassword:dev

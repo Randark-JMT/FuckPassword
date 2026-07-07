@@ -1,0 +1,42 @@
+# Production-style compose: pulls the prebuilt app image from GHCR.
+# Set GHCR_OWNER to your GitHub username / org, e.g.:
+#   GHCR_OWNER=you POSTGRES_PASSWORD=changeme docker compose up -d
+#
+# To build from source instead (development), see docker-compose.override.yml.
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: fuckpassword
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fuckpassword"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  app:
+    image: ghcr.io/${GHCR_OWNER:?set GHCR_OWNER to your github username}/fuckpassword:latest
+    environment:
+      DSN: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/fuckpassword?sslmode=disable
+      UPLOAD_DIR: /data/uploads
+      STATEMENT_TIMEOUT: ${STATEMENT_TIMEOUT:-60s}
+      MAX_QUEUE: ${MAX_QUEUE:-20}
+      TTL_DAYS: ${TTL_DAYS:-7}
+    volumes:
+      - upload-staging:/data/uploads
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pg-data:
+  upload-staging:

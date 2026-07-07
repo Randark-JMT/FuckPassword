@@ -1,0 +1,19 @@
+# dependencies
+**/node_modules/
+
+# frontend build output (rebuilt by the Docker frontend stage / `npm run build`)
+frontend/dist/
+frontend/vite.config.js
+frontend/vite.config.d.ts
+*.tsbuildinfo
+
+# go build artifacts
+*.exe
+/backend/server
+
+# env / os
+.env
+.env.*
+!.env.example
+.DS_Store
+Thumbs.db
