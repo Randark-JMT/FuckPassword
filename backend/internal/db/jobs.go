@@ -147,6 +147,7 @@ func (d *DB) GetJob(ctx context.Context, id string) (*Job, error) {
 
 // Board returns the currently-running job (if any) and the waiting queue in order.
 func (d *DB) Board(ctx context.Context) (running *Job, queued []*Job, err error) {
+	queued = []*Job{} // non-nil so JSON encodes as [], not null
 	// running
 	r := &Job{}
 	var mc *int
