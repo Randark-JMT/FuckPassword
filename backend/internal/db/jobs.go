@@ -10,16 +10,16 @@ import (
 )
 
 type Job struct {
-	ID         string    `json:"id"`
-	Pattern    string    `json:"pattern"`
-	IsRegex    bool      `json:"is_regex"`
-	Status     string    `json:"status"`
-	MatchCount *int      `json:"match_count,omitempty"`
-	Error      *string   `json:"error,omitempty"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID         string     `json:"id"`
+	Pattern    string     `json:"pattern"`
+	IsRegex    bool       `json:"is_regex"`
+	Status     string     `json:"status"`
+	MatchCount *int       `json:"match_count,omitempty"`
+	Error      *string    `json:"error,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	Position   int64     `json:"position"`
+	Position   int64      `json:"position"`
 }
 
 var ErrQueueFull = errors.New("queue full")
@@ -28,6 +28,34 @@ func (d *DB) QueueDepth(ctx context.Context) (int, error) {
 	var n int
 	err := d.Pool.QueryRow(ctx, `SELECT count(*) FROM query_jobs WHERE status = 'queued'`).Scan(&n)
 	return n, err
+}
+
+func (d *DB) JobHistory(ctx context.Context, limit, offset int) ([]*Job, error) {
+	rows, err := d.Pool.Query(ctx, `
+        SELECT id, pattern, is_regex, status, match_count, error,
+               created_at, started_at, finished_at, position
+          FROM query_jobs
+         ORDER BY position DESC
+         LIMIT $1 OFFSET $2`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	jobs := []*Job{}
+	for rows.Next() {
+		j := &Job{}
+		var mc *int
+		var errStr *string
+		var startedAt, finishedAt *time.Time
+		if err := rows.Scan(&j.ID, &j.Pattern, &j.IsRegex, &j.Status, &mc, &errStr,
+			&j.CreatedAt, &startedAt, &finishedAt, &j.Position); err != nil {
+			return nil, err
+		}
+		j.MatchCount, j.Error, j.StartedAt, j.FinishedAt = mc, errStr, startedAt, finishedAt
+		jobs = append(jobs, j)
+	}
+	return jobs, rows.Err()
 }
 
 func (d *DB) EnqueueJob(ctx context.Context, pattern string, isRegex bool, maxQueue int) (string, error) {
@@ -131,10 +159,10 @@ func (d *DB) GetJob(ctx context.Context, id string) (*Job, error) {
 	var startedAt, finishedAt *time.Time
 	err := d.Pool.QueryRow(ctx, `
         SELECT id, pattern, is_regex, status, match_count, error,
-               created_at, started_at, finished_at
+               created_at, started_at, finished_at, position
           FROM query_jobs WHERE id = $1`, id).
 		Scan(&j.ID, &j.Pattern, &j.IsRegex, &j.Status, &mc, &errStr,
-			&j.CreatedAt, &startedAt, &finishedAt)
+			&j.CreatedAt, &startedAt, &finishedAt, &j.Position)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -155,10 +183,10 @@ func (d *DB) Board(ctx context.Context) (running *Job, queued []*Job, err error)
 	var startedAt, finishedAt *time.Time
 	err = d.Pool.QueryRow(ctx, `
         SELECT id, pattern, is_regex, status, match_count, error,
-               created_at, started_at, finished_at
+               created_at, started_at, finished_at, position
           FROM query_jobs WHERE status = 'running' LIMIT 1`).
 		Scan(&r.ID, &r.Pattern, &r.IsRegex, &r.Status, &mc, &errStr,
-			&r.CreatedAt, &startedAt, &finishedAt)
+			&r.CreatedAt, &startedAt, &finishedAt, &r.Position)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil, err
 	}
@@ -168,7 +196,7 @@ func (d *DB) Board(ctx context.Context) (running *Job, queued []*Job, err error)
 	}
 
 	rows, err := d.Pool.Query(ctx, `
-        SELECT id, pattern, is_regex, created_at
+        SELECT id, pattern, is_regex, created_at, position
           FROM query_jobs WHERE status = 'queued' ORDER BY position`)
 	if err != nil {
 		return running, nil, err
@@ -176,7 +204,7 @@ func (d *DB) Board(ctx context.Context) (running *Job, queued []*Job, err error)
 	defer rows.Close()
 	for rows.Next() {
 		q := &Job{Status: "queued"}
-		if err := rows.Scan(&q.ID, &q.Pattern, &q.IsRegex, &q.CreatedAt); err != nil {
+		if err := rows.Scan(&q.ID, &q.Pattern, &q.IsRegex, &q.CreatedAt, &q.Position); err != nil {
 			return running, nil, err
 		}
 		queued = append(queued, q)

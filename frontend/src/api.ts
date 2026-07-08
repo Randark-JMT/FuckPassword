@@ -81,6 +81,11 @@ export async function getBoard(): Promise<{ running: Job | null; queued: Job[] }
   return jsonOrThrow(res);
 }
 
+export async function getJobHistory(offset = 0, limit = 50): Promise<{ jobs: Job[]; count: number; offset: number; limit: number }> {
+  const res = await fetch(`/api/jobs/history?offset=${offset}&limit=${limit}`);
+  return jsonOrThrow(res);
+}
+
 export async function getJob(id: string): Promise<Job> {
   const res = await fetch(`/api/jobs/${id}`);
   return jsonOrThrow(res);

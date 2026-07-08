@@ -4,8 +4,9 @@ import QueryView from "./components/QueryView";
 import StatusBoard from "./components/StatusBoard";
 import ResultsView from "./components/ResultsView";
 import LogsView from "./components/LogsView";
+import HistoryView from "./components/HistoryView";
 
-type Tab = "upload" | "query" | "status" | "logs";
+type Tab = "upload" | "query" | "status" | "history" | "logs";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("query");
@@ -21,6 +22,9 @@ export default function App() {
           </button>
           <button className={tab === "status" ? "active" : ""} onClick={() => setTab("status")}>
             Status Board
+          </button>
+          <button className={tab === "history" ? "active" : ""} onClick={() => setTab("history")}>
+            History
           </button>
           <button className={tab === "logs" ? "active" : ""} onClick={() => setTab("logs")}>
             Logs
@@ -42,6 +46,7 @@ export default function App() {
           />
         )}
         {tab === "status" && <StatusBoard onFocus={(id) => setFocusJob(id)} />}
+        {tab === "history" && <HistoryView onFocus={(id) => setFocusJob(id)} />}
         {tab === "logs" && <LogsView />}
       </main>
 

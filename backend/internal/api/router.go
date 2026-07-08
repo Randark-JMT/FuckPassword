@@ -20,6 +20,7 @@ func NewRouter(a *API) http.Handler {
 	mux.HandleFunc("GET /api/logs/stream", a.HandleLogStream)
 	mux.HandleFunc("POST /api/jobs", a.HandleSubmit)
 	mux.HandleFunc("GET /api/jobs", a.HandleBoard)
+	mux.HandleFunc("GET /api/jobs/history", a.HandleHistory)
 	mux.HandleFunc("GET /api/jobs/{id}", a.HandleJob)
 	mux.HandleFunc("GET /api/jobs/{id}/results", a.HandleResults)
 	mux.HandleFunc("GET /api/jobs/{id}/download", a.HandleDownload)

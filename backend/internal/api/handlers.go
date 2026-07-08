@@ -19,6 +19,7 @@ import (
 const (
 	maxPatternRunes = 500
 	maxResultLimit  = 1000
+	maxHistoryLimit = 200
 )
 
 type API struct {
@@ -105,6 +106,25 @@ func (a *API) HandleBoard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"running": running, "queued": queued})
+}
+
+func (a *API) HandleHistory(w http.ResponseWriter, r *http.Request) {
+	offset := atoiDefault(r.URL.Query().Get("offset"), 0)
+	limit := atoiDefault(r.URL.Query().Get("limit"), 50)
+	if limit > maxHistoryLimit {
+		limit = maxHistoryLimit
+	}
+	jobs, err := a.DB.JobHistory(r.Context(), limit, offset)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"jobs":   jobs,
+		"count":  len(jobs),
+		"offset": offset,
+		"limit":  limit,
+	})
 }
 
 func (a *API) HandleJob(w http.ResponseWriter, r *http.Request) {
