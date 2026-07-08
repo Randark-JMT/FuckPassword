@@ -3,13 +3,17 @@ package api
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"fuckpassword/internal/db"
 	"fuckpassword/internal/ingest"
+	"fuckpassword/internal/logstream"
+	"fuckpassword/internal/tasklock"
 )
 
 const (
@@ -20,17 +24,23 @@ const (
 type API struct {
 	DB       *db.DB
 	Ingest   *ingest.Service
+	Tasks    *tasklock.Lock
+	Logs     *logstream.Hub
 	MaxQueue int
 }
 
+type uploadStatusResponse struct {
+	ingest.Progress
+	CurrentTask tasklock.Snapshot `json:"current_task"`
+}
+
 func (a *API) HandleUpload(w http.ResponseWriter, r *http.Request) {
-	if a.Ingest.IsBusy() {
-		writeJSON(w, http.StatusConflict, map[string]any{"error": "an Upload is already in progress"})
-		return
-	}
 	if err := a.Ingest.StartUpload(r.Body, r.ContentLength); err != nil {
 		if errors.Is(err, ingest.ErrBusy) {
-			writeJSON(w, http.StatusConflict, map[string]any{"error": "an Upload is already in progress"})
+			writeJSON(w, http.StatusConflict, map[string]any{
+				"error":        "another task is already in progress",
+				"current_task": a.Tasks.Snapshot(),
+			})
 			return
 		}
 		log.Printf("upload phase A failed: %v", err)
@@ -44,7 +54,10 @@ func (a *API) HandleUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) HandleUploadStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, a.Ingest.Snapshot())
+	writeJSON(w, http.StatusOK, uploadStatusResponse{
+		Progress:    a.Ingest.Snapshot(),
+		CurrentTask: a.Tasks.Snapshot(),
+	})
 }
 
 type submitRequest struct {
@@ -77,6 +90,11 @@ func (a *API) HandleSubmit(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
+	a.publish("query", "info", "Query queued", map[string]any{
+		"task_id": id,
+		"pattern": req.Pattern,
+		"regex":   req.IsRegex,
+	})
 	writeJSON(w, http.StatusAccepted, map[string]any{"task_id": id, "status": "queued"})
 }
 
@@ -171,7 +189,72 @@ func (a *API) HandleCancel(w http.ResponseWriter, r *http.Request) {
 			log.Printf("pg_cancel_backend %d: %v", pid, err)
 		}
 	}
+	a.publish("query", "warn", "Query cancellation requested", map[string]any{"task_id": id})
 	writeJSON(w, http.StatusOK, map[string]any{"cancelled": true})
+}
+
+func (a *API) HandleLogs(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, a.Logs.Recent())
+}
+
+func (a *API) HandleLogStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "streaming unsupported"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	ch, cancel := a.Logs.Subscribe()
+	defer cancel()
+
+	lastSent := int64(0)
+	send := func(ev logstream.Event) bool {
+		data, err := json.Marshal(ev)
+		if err != nil {
+			return true
+		}
+		if _, err := fmt.Fprintf(w, "id: %d\nevent: log\ndata: %s\n\n", ev.ID, data); err != nil {
+			return false
+		}
+		lastSent = ev.ID
+		flusher.Flush()
+		return true
+	}
+
+	for _, ev := range a.Logs.Recent() {
+		if !send(ev) {
+			return
+		}
+	}
+
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev, ok := <-ch:
+			if !ok {
+				return
+			}
+			if ev.ID <= lastSent {
+				continue
+			}
+			if !send(ev) {
+				return
+			}
+		case <-ticker.C:
+			if _, err := fmt.Fprint(w, ": ping\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -189,4 +272,11 @@ func atoiDefault(s string, def int) int {
 		return def
 	}
 	return n
+}
+
+func (a *API) publish(source, level, message string, fields map[string]any) {
+	if a.Logs == nil {
+		return
+	}
+	a.Logs.Publish(source, level, message, fields)
 }

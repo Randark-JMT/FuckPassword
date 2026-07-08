@@ -13,7 +13,9 @@ import (
 	"fuckpassword/internal/config"
 	"fuckpassword/internal/db"
 	"fuckpassword/internal/ingest"
+	"fuckpassword/internal/logstream"
 	"fuckpassword/internal/queue"
+	"fuckpassword/internal/tasklock"
 )
 
 func main() {
@@ -31,14 +33,18 @@ func main() {
 	database.ResetStuckJobs(ctx)
 	database.StartReaper(ctx, cfg.TTLDays)
 
-	ing := ingest.New(database, cfg.UploadDir, cfg.IngestBatch, cfg.MaxLineBytes)
+	tasks := tasklock.New()
+	logs := logstream.New(500)
+	logs.Publish("system", "info", "Server started", nil)
+
+	ing := ingest.New(database, tasks, logs, cfg.UploadDir, cfg.IngestBatch, cfg.MaxLineBytes)
 	ing.SweepOrphans()
 	ing.Start(ctx)
 
-	worker := queue.New(database, cfg.StatementTimeout)
+	worker := queue.New(database, tasks, logs, cfg.StatementTimeout)
 	go worker.Run(ctx)
 
-	apiObj := &api.API{DB: database, Ingest: ing, MaxQueue: cfg.MaxQueue}
+	apiObj := &api.API{DB: database, Ingest: ing, Tasks: tasks, Logs: logs, MaxQueue: cfg.MaxQueue}
 	srv := &http.Server{
 		Addr:              cfg.ListenAddr,
 		Handler:           api.NewRouter(apiObj),

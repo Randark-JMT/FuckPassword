@@ -135,3 +135,81 @@ textarea { min-height: 70px; resize: vertical; }
   border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: middle;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* upload progress */
+.upload-progress {
+  padding: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.progress-head { margin-bottom: 10px; }
+.progress-meta { margin-top: 8px; font-family: var(--mono); font-size: 12px; }
+.progress-bar {
+  height: 8px;
+  overflow: hidden;
+  background: #0b0d12;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.progress-bar > div {
+  height: 100%;
+  min-width: 0;
+  background: var(--accent);
+  transition: width 0.2s ease;
+}
+.progress-bar.indeterminate > div {
+  width: 35%;
+  animation: progress-slide 1.1s ease-in-out infinite;
+}
+@keyframes progress-slide {
+  0% { transform: translateX(-110%); }
+  100% { transform: translateX(300%); }
+}
+
+/* logs */
+.logs-panel { padding-bottom: 12px; }
+.logs-toolbar { margin-bottom: 12px; }
+.logs-list {
+  height: min(62vh, 640px);
+  min-height: 320px;
+  overflow: auto;
+  background: #0b0d12;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+.log-empty { padding: 12px; }
+.log-row {
+  display: grid;
+  grid-template-columns: 72px 58px 82px minmax(160px, 1fr) minmax(180px, 1.2fr);
+  gap: 10px;
+  align-items: start;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+.log-row:nth-child(odd) { background: rgba(255,255,255,0.015); }
+.log-time { color: var(--muted); white-space: nowrap; }
+.log-level {
+  text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+.log-level.info { color: var(--accent); }
+.log-level.warn { color: var(--warn); }
+.log-level.error { color: var(--err); }
+.log-source { color: var(--muted); }
+.log-message { color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+.log-fields { color: var(--muted); min-width: 0; overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  .topbar { align-items: flex-start; }
+  .topbar nav { flex-wrap: wrap; justify-content: flex-end; }
+  .log-row {
+    grid-template-columns: 64px 52px minmax(0, 1fr);
+    gap: 8px;
+  }
+  .log-source { display: none; }
+  .log-message, .log-fields { grid-column: 3; }
+}

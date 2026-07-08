@@ -11,6 +11,14 @@ export interface Job {
   position: number;
 }
 
+export interface TaskSnapshot {
+  busy: boolean;
+  kind?: "upload" | "query" | string;
+  id?: string;
+  label?: string;
+  since?: string | null;
+}
+
 async function jsonOrThrow<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let msg = res.statusText;
@@ -28,18 +36,35 @@ async function jsonOrThrow<T>(res: Response): Promise<T> {
 export interface UploadStatus {
   phase: "idle" | "uploading" | "processing" | "done" | "error";
   bytes_total: number;
+  bytes_received: number;
+  lines_total: number;
   lines_processed: number;
   inserted: number;
   skipped: number;
   started_at?: string | null;
   finished_at?: string | null;
   error?: string;
+  current_task: TaskSnapshot;
+}
+
+export interface LogEvent {
+  id: number;
+  time: string;
+  source: string;
+  level: "info" | "warn" | "error" | string;
+  message: string;
+  fields?: Record<string, unknown>;
 }
 
 export async function getUploadStatus(): Promise<UploadStatus> {
   const res = await fetch("/api/upload/status");
   if (!res.ok) throw new Error(`status ${res.status}`);
   return res.json();
+}
+
+export async function getRecentLogs(): Promise<LogEvent[]> {
+  const res = await fetch("/api/logs");
+  return jsonOrThrow(res);
 }
 
 export async function submitJob(pattern: string, isRegex: boolean): Promise<{ task_id: string; status: string }> {

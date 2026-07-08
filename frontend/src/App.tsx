@@ -3,8 +3,9 @@ import UploadView from "./components/UploadView";
 import QueryView from "./components/QueryView";
 import StatusBoard from "./components/StatusBoard";
 import ResultsView from "./components/ResultsView";
+import LogsView from "./components/LogsView";
 
-type Tab = "upload" | "query" | "status";
+type Tab = "upload" | "query" | "status" | "logs";
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("query");
@@ -20,6 +21,9 @@ export default function App() {
           </button>
           <button className={tab === "status" ? "active" : ""} onClick={() => setTab("status")}>
             Status Board
+          </button>
+          <button className={tab === "logs" ? "active" : ""} onClick={() => setTab("logs")}>
+            Logs
           </button>
           <button className={tab === "upload" ? "active" : ""} onClick={() => setTab("upload")}>
             Upload
@@ -38,6 +42,7 @@ export default function App() {
           />
         )}
         {tab === "status" && <StatusBoard onFocus={(id) => setFocusJob(id)} />}
+        {tab === "logs" && <LogsView />}
       </main>
 
       {focusJob && (

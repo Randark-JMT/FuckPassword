@@ -17,3 +17,6 @@ frontend/vite.config.d.ts
 !.env.example
 .DS_Store
 Thumbs.db
+
+# local Go test cache for sandboxed runs
+.gocache/

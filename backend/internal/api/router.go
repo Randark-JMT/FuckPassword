@@ -16,6 +16,8 @@ func NewRouter(a *API) http.Handler {
 	})
 	mux.HandleFunc("POST /api/upload", a.HandleUpload)
 	mux.HandleFunc("GET /api/upload/status", a.HandleUploadStatus)
+	mux.HandleFunc("GET /api/logs", a.HandleLogs)
+	mux.HandleFunc("GET /api/logs/stream", a.HandleLogStream)
 	mux.HandleFunc("POST /api/jobs", a.HandleSubmit)
 	mux.HandleFunc("GET /api/jobs", a.HandleBoard)
 	mux.HandleFunc("GET /api/jobs/{id}", a.HandleJob)
